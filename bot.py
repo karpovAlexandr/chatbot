@@ -4,19 +4,21 @@ import logging
 import requests
 import vk_api
 from pony.orm import db_session, CacheIndexError, OperationWithDeletedObjectError
-from vk_api.bot_longpoll import VkBotLongPoll
-from vk_api.bot_longpoll import VkBotEventType
+from vk_api.bot_longpoll import VkBotEventType, VkBotLongPoll
 from vk_api.utils import get_random_id
 
 import handlers
 from models import UserState, Ticket
 
 try:
-    from settings import TOKEN
-    from settings import GROUP_ID
-    from settings import SCENARIOS
-    from settings import INTENTS
-    from settings import DEFAULT_ANSWER
+    from settings import (
+        TOKEN,
+        GROUP_ID,
+        SCENARIOS,
+        INTENTS,
+        DEFAULT_ANSWER,
+    )
+
 except ImportError:
     settings = None
     TOKEN = None
@@ -200,7 +202,7 @@ class Bot:
                     comment=str(state.context['comment']),
                 )
                 state.delete()
-                print('удалили из бд, проверь!')
+                print('удалили userstate из бд, проверь!')
 
                 return
         else:
@@ -254,5 +256,3 @@ if __name__ == "__main__":
     conf_logging()
     bot = Bot(group=GROUP_ID, token_api=TOKEN)
     bot.run()
-
-# Первая часть курсового проекта зачтена.
