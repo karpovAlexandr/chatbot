@@ -4,7 +4,7 @@ from six import BytesIO
 from PIL import Image, ImageDraw, ImageFont
 
 
-def generate_ticket(name, departure, arrival, date, email):
+def generate_ticket(name, departure, arrival, date, email, flight_number):
     """
     генерация картинки png
     :param email: электронная почта для генерации аватара
@@ -12,6 +12,7 @@ def generate_ticket(name, departure, arrival, date, email):
     :param departure: город вылета
     :param arrival:  город посадки
     :param date: дата рейса
+    :param flight_number: номер рейса
     :return: BytesIO object
     """
     COORDINATES = {
@@ -20,6 +21,7 @@ def generate_ticket(name, departure, arrival, date, email):
         'arrival': (50, 257),
         'date': (275, 257),
         'avatar': (400, 110),
+        'flight_number': (50, 327),
     }
 
     TEMPLATE_PATH = 'templates/ticket_template.png'
@@ -36,6 +38,7 @@ def generate_ticket(name, departure, arrival, date, email):
     draw.text(xy=COORDINATES['departure'], text=departure, font=font, fill=BLACK_COLOR)
     draw.text(xy=COORDINATES['arrival'], text=arrival, font=font, fill=BLACK_COLOR)
     draw.text(xy=COORDINATES['date'], text=date, font=font, fill=BLACK_COLOR)
+    draw.text(xy=COORDINATES['flight_number'], text=flight_number, font=font, fill=BLACK_COLOR)
 
     response = requests.get(url=f"https://api.adorable.io/avatars/{AVATAR_SIZE}/{email}")
     # print(f"https://api.adorable.io/avatars/{AVATAR_SIZE}/{email}")
@@ -58,7 +61,8 @@ TEST_ARGUMENTS = {
     'departure': 'Москва',
     'arrival': 'Берлин',
     'date': '01-01-2020',
-    'email': 'sample@mail.ri'
+    'email': 'sample@mail.ru',
+    'flight_number': '50',
 }
 
 if __name__ == '__main__':
