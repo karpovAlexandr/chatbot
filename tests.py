@@ -1,26 +1,31 @@
 from copy import deepcopy
+import datetime
 from unittest import TestCase
-from unittest.mock import patch, Mock
+from unittest.mock import Mock, patch
 
-from pony.orm import db_session, rollback
-
-from generate_ticket import generate_ticket, TEST_ARGUMENTS
-
-from handlers import (
-    action_print_available_departure_cities,
-    action_print_available_arrival_cities,
-    action_print_available_air_flights,
-    action_print_context,
-    action_print_available_dates,
-)
+from pony.orm import db_session, select, rollback
 
 from vk_api.bot_longpoll import VkBotEvent
 
+from handlers import (
+    action_print_available_air_flights,
+    action_print_available_arrival_cities,
+    action_print_available_departure_cities,
+    action_print_context,
+)
+from generate_ticket import generate_ticket, TEST_ARGUMENTS
+from models import Flights, flight_generator
+
 try:
-    import settings
+    from settings import (
+        DEFAULT_ANSWER, INTENTS,
+        SCENARIOS, RAW_EVENT,
+        cities,
+    )
+
     from bot import Bot
 except ImportError:
-    settings = None
+    DEFAULT_ANSWER, INTENTS, SCENARIOS, RAW_EVENT = None, None, None, None
     bot = None
     Bot = None
 
@@ -40,6 +45,25 @@ def isolate_db(test_func):
     return wrapper
 
 
+@db_session
+def get_context_data(date):
+    """Готовим наш контекст"""
+    context = dict()
+    query = (select(item for item in Flights if item.date == date)[:1])
+
+    if not query:
+        flight_generator(cities)
+        query = (select(item for item in Flights if item.date == date)[:1])
+
+    for flight in query:
+        cleaned_date = datetime.datetime.strftime(flight.date, '%d-%m-%Y')
+        context.update({'departure': flight.departure})
+        context.update({'arrival': flight.arrival})
+        context.update({'date': cleaned_date})
+        context.update({'flight_number': str(flight.flight_number)})
+    return context
+
+
 class TestBot(TestCase):
     RAW_EVENT = {
         'type': 'message_new',
@@ -56,6 +80,7 @@ class TestBot(TestCase):
                    'is_hidden': False},
         'group_id': 197279836
     }
+    TODAY = datetime.date.today()
 
     def test_run(self):
         count = 5
@@ -77,70 +102,57 @@ class TestBot(TestCase):
                 test_bot.on_event.assert_any_call(test_obj)
                 assert test_bot.on_event.call_count == count
 
+    CONTEXT = get_context_data(TODAY)
+
     INPUTS = [
         'привет',
         'ticket',  # 1
-        'МОСКВА',  # 2
-        'САНКТ-ПЕТЕРБУРГ',  # 3
-        '03-10-2020',  # 4  TODO Дату хорошо было бы задавать относительную, чтобы со временем она не стала
-        # TODO датой из прошлого (но тут проблема и с расписанием, обсудим её в лмс)
-        '1',  # 5
+        CONTEXT['departure'],  # 2
+        CONTEXT['arrival'],  # 3
+        CONTEXT['date'],
+        CONTEXT['flight_number'],  # 5
         '1',  # 6
         'коммент',  # 7
         'да',  # 8
         'Имя Пользователя',  # 9
         'ticket',  # 1
-        'МОСКВА',  # 2
-        'САНКТ-ПЕТЕРБУРГ',  # 3
-        '03-10-2020',  # 4
+        CONTEXT['departure'],  # 2
+        CONTEXT['arrival'],  # 3
+        CONTEXT['date'],  # 4
         '100',  # 5
-        '1',  # 6
+        CONTEXT['flight_number'],  # 6
         '1',  # 6
         'коммент',  # 7
         'нет',  # 8
 
     ]
 
-    CONTEXT = {
-        'departure': INPUTS[2],
-        'arrival': INPUTS[3],
-        'date': INPUTS[4],
-        'flight_number': INPUTS[5],
+    CONTEXT.update({
         'seats_count': INPUTS[6],
         'comment': INPUTS[7],
         'phone': INPUTS[9]
-
-    }
+    })
 
     EXPECTED_OUTPUTS = [
-        settings.DEFAULT_ANSWER,
-        settings.SCENARIOS['ticket_order']['steps']["step_1"]['text'] + action_print_available_departure_cities(),
-        settings.SCENARIOS['ticket_order']['steps']["step_2"]['text'] + action_print_available_arrival_cities(CONTEXT),
-        settings.SCENARIOS['ticket_order']['steps']["step_3"]['text'],
-        settings.SCENARIOS['ticket_order']['steps']["step_4"]['text'] + action_print_available_air_flights(CONTEXT),
-        settings.SCENARIOS['ticket_order']['steps']["step_5"]['text'],
-        settings.SCENARIOS['ticket_order']['steps']["step_6"]['text'],
-        settings.SCENARIOS['ticket_order']['steps']["step_7"]['text'] + action_print_context(CONTEXT),
-        settings.SCENARIOS['ticket_order']['steps']["step_8"]['text'],
-        settings.SCENARIOS['ticket_order']['steps']["step_9"]['text'],
-        # TODO Тут несовпадение начинается
-        # TODO
-        # Хорошие новости!
-        # с Вами свяжутся по номеру Имя Пользователя
-        # --------------------------------------------------
-        # Хорошие новости!
-        # с Вами свяжутся по номеру {phone}  TODO Надо вот эту переменную заполнить при помощи format
-        # --------------------------------------------------
-        # False
-        settings.SCENARIOS['ticket_order']['steps']["step_1"]['text'] + action_print_available_departure_cities(),
-        settings.SCENARIOS['ticket_order']['steps']["step_2"]['text'] + action_print_available_arrival_cities(CONTEXT),
-        settings.SCENARIOS['ticket_order']['steps']["step_3"]['text'],
-        settings.SCENARIOS['ticket_order']['steps']["step_4"]['text'] + action_print_available_air_flights(CONTEXT),
-        settings.SCENARIOS['ticket_order']['steps']["step_4"]['failure_text'],
-        settings.SCENARIOS['ticket_order']['steps']["step_5"]['text'],
-        settings.SCENARIOS['ticket_order']['steps']["step_6"]['text'],
-        settings.SCENARIOS['ticket_order']['steps']["step_7"]['text'] + action_print_context(CONTEXT),
-        settings.INTENTS[2]['answer'],
+        DEFAULT_ANSWER,
+        SCENARIOS['ticket_order']['steps']["step_1"]['text'] + action_print_available_departure_cities(),
+        SCENARIOS['ticket_order']['steps']["step_2"]['text'] + action_print_available_arrival_cities(CONTEXT),
+        SCENARIOS['ticket_order']['steps']["step_3"]['text'],
+        SCENARIOS['ticket_order']['steps']["step_4"]['text'] + action_print_available_air_flights(CONTEXT),
+        SCENARIOS['ticket_order']['steps']["step_5"]['text'],
+        SCENARIOS['ticket_order']['steps']["step_6"]['text'],
+        SCENARIOS['ticket_order']['steps']["step_7"]['text'] + action_print_context(CONTEXT),
+        SCENARIOS['ticket_order']['steps']["step_8"]['text'],
+        SCENARIOS['ticket_order']['steps']["step_9"]['text'],
+        SCENARIOS['ticket_order']['steps']["step_1"]['text'] + action_print_available_departure_cities(),
+        SCENARIOS['ticket_order']['steps']["step_2"]['text'] + action_print_available_arrival_cities(CONTEXT),
+        SCENARIOS['ticket_order']['steps']["step_3"]['text'],
+        SCENARIOS['ticket_order']['steps']["step_4"]['text'] + action_print_available_air_flights(CONTEXT),
+        SCENARIOS['ticket_order']['steps']["step_4"]['failure_text'],
+        SCENARIOS['ticket_order']['steps']["step_5"]['text'],
+        SCENARIOS['ticket_order']['steps']["step_6"]['text'],
+        SCENARIOS['ticket_order']['steps']["step_7"]['text'] + action_print_context(CONTEXT),
+        INTENTS[2]['answer'],
     ]
 
     @isolate_db
@@ -169,13 +181,14 @@ class TestBot(TestCase):
         for call in send_mock.call_args_list:
             args, kwargs = call
             real_outputs.append(kwargs['message'])
-        for real, expec in zip(real_outputs, self.EXPECTED_OUTPUTS):
-            print(real)
-            print('-' * 50)
-            print(expec)
-            print('-' * 50)
-            print(real == expec)
-            print('_' * 50)
+        # для удобной проверки
+        # for real, expec in zip(real_outputs, self.EXPECTED_OUTPUTS):
+        #     print(real)
+        #     print('-' * 50)
+        #     print(expec)
+        #     print('-' * 50)
+        #     print(real == expec)
+        #     print('_' * 50)
         assert real_outputs == self.EXPECTED_OUTPUTS
 
     def test_image_generation(self):
